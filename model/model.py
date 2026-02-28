@@ -80,7 +80,7 @@ from typing import Optional, Tuple, List, Union
 from transformers import PreTrainedModel, GenerationMixin, PreTrainedConfig
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-class RMSNorm(torch.nn.Moudle):
+class RMSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-5):
         super.__init__()
         self.eps = eps
