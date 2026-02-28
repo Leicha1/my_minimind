@@ -70,3 +70,41 @@ class MokioMindConfig(PretrainedConfig):
             else None
         )
 
+import math
+import torch
+import torch.nn.init as init
+import totch.nn.function as F
+from torch import nn
+from transformers.activations import ACT2FN
+from typing import Optional, Tuple, List, Union
+from transformers import PreTrainedModel, GenerationMixin, PreTrainedConfig
+from transformers.modeling_outputs import CausalLMOutputWithPast
+
+class RMSNorm(torch.nn.Moudle):
+    def __init__(self, dim: int, eps: float = 1e-5):
+        super.__init__()
+        self.eps = eps
+        self.dim = dim
+        self.weight = nn.Parameter(torch.ones(dim))
+        
+    def _norm(self, x):
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim = True) + self.eps)
+    """
+    x.pow(2)：对输入张量 x 的每个元素做平方运算（计算元素的平方值）;
+    .mean(-1, keepdim=True);
+    -1:按最后一维计算均值（比如 x 形状是 [batch, seq_len, dim]，则对每个 dim 维度求均值，得到 [batch, seq_len, 1]);
+    keepdim=True: 保持维度数不变，避免广播维度不匹配;
+    + self.eps:加上极小值 eps,防止后续开方时分母为 0;
+    torch.rsqrt(...)：计算 “倒数平方根” 1 / sqrt(x)，等价于 1 / torch.sqrt(...)，是更高效的实现；
+    x * ...：将原输入 x 乘以上述倒数平方根，完成 “均方根归一化”。
+    """
+
+    def forward(self, x):
+        return self.weight * self._norm(x.float()).type_as(x)
+    
+    
+
+    
+
+
+
