@@ -102,6 +102,101 @@ class RMSNorm(torch.nn.Module):
     def forward(self, x):
         return self.weight * self._norm(x.float()).type_as(x)
     
+
+# RoPE旋转位置编码 && YaRN扩展
+def precompute_rope_cis(
+        dim:int, 
+        end:int=int(32*1024), 
+        rope_base:float=1e6,
+        rope_scaling:Optional[dict]=None
+):
+    
+    # ===================== 步骤1：计算原始RoPE频率（基础公式） =====================
+    # 1. torch.arange(0, dim, 2)[: (dim // 2)]：生成0,2,4...dim-2（两两分组的索引）
+    # 2. rope_base ** (索引/float(dim))：计算10000^(2i/dim)（RoPE核心频率公式）
+    # 3. 1.0 / 结果：得到每个二维组的原始频率θ_i
+    freqs = 1.0 / (rope_base ** (torch.arange(0,dim,2)[:dim//2].float()/dim))
+
+    # ===================== 步骤2：YaRN频率缩放（核心扩展） =====================
+    # （分段 + 幂次）缩放，低频率组（影响短文本）缩放更保守，
+    # 高频率组（影响长文本）大幅缩放，适合中等幅度扩展（比如 2048→8192）
+    if rope_scaling is not None:
+        # 读取YaRN配置参数
+        orig_max, factor, beta_fast, beta_slow = (
+            rope_scaling.get("original_max_position_embeddings", 2048),
+            rope_scaling.get("factor", 4),
+            rope_scaling.get("beta_fast", 4),
+            rope_scaling.get("beta_slow", 1),
+        )
+        # 只有当目标长度>原始长度时，才触发YaRN缩放
+        if end / orig_max > 1.0:
+            # 2.1 计算临界索引
+            # 逻辑：找到第一个“频率周期>original_max”的分组索引
+            # 频率周期 = 2π/θ_i → 周期越大，频率越低（转得越慢）
+            # 作用：区分“低频率组（周期>原始长度）”和“高频率组（周期<原始长度）”
+            corr_dim = next((i for i in range(0,dim//2) if 2*math.pi/freqs[i] > orig_max), dim//2)
+            # 没找到就设为dim//2（所有组都缩放）
+
+            # 2.2 生成幂次渐变的beta值（从beta_slow到beta_fast）
+            # power：0→1的线性序列（0, 1/(dim//2-1), 2/(dim//2-1)...1）
+            power = torch.arange(0, dim // 2, device=freqs.device) / max(1, (dim // 2 - 1)) # 避免除0
+            # beta：随power从beta_slow（1.0）渐变到beta_fast（4.0）
+            beta = beta_slow + (beta_fast - beta_slow) * power
+            
+            # 2.3 应用分段幂次缩放
+            scale = torch.where(
+                # 条件：当前分组索引 < corr_dim（低频率组）
+                torch.arange(0, dim // 2, device = freqs.device) < corr_dim,
+                # 低频率组缩放公式（保守，保短文本精度）：(β*f -β +1)/(β*f)
+                (beta * factor - beta + 1) / (beta * factor),
+                # 高频率组大幅缩放
+                1.0 / factor 
+            )
+
+            freqs = freqs * scale
+    
+    # ===================== 步骤3：计算所有位置的旋转角度 =====================
+    t = torch.arange(end, device=freqs.device)
+    # torch.outer(t, freqs)：外积→shape=[end, dim//2]，每个位置×每个频率=旋转角度
+    freqs = torch.outer(t, freqs).float()
+
+    # ===================== 步骤4：生成cos/sin并补全维度 =====================
+    # 因为freqs是[end, dim//2]，需要补全到dim维（两两分组还原）
+    # torch.cat([cos,fcos])：把dim//2扩展到dim（每个频率的cos值复制一次）
+    freqs_cos = torch.cat([torch.cos(freqs), torch.cos(freqs)], dim = -1)
+    freqs_sin = torch.cat([torch.sin(freqs), torch.sin(freqs)], dim = -1)
+
+    return freqs_cos, freqs_sin
+
+def apply_rotary_pos_emb(
+    q,  # Q张量，shape=[batch_size, seq_len, num_heads, head_dim]
+    k,  # K张量，shape=[batch_size, seq_len, num_kv_heads, head_dim]
+    cos,  # precompute_freqs输出的cos，shape=[end, head_dim]
+    sin,  # precompute_freqs输出的sin，shape=[end, head_dim]
+    unsqueeze_dim=1  # 扩展维度的位置（匹配Q/K的head维度）
+):
+    
+    # 辅助函数：旋转半维（数学技巧，替代手动拆分分组）
+    def rotate_half(x):
+        # x.shape[-1]//2：取每个头维度的一半（比如128→64）
+        # -x[..., 64:]：后64维取负；x[..., :64]：前64维保留
+        # 拼接后等价于二维旋转公式，代码更高效
+        return torch.cat([-x[..., x.shape[-1] // 2:], x[..., :x.shape[-1] // 2]], dim=-1)
+    #头尾两两配对进行旋转位置编码 （核心公式：x' = x*cos + rotate_half(x)*sin）
+    #x1′=x1⋅cosθ−x2⋅sinθ  
+    #x2′=x1⋅sinθ+x2⋅cosθ
+    #x' = (x1+x2)*cos + (-x2+x1)*sin
+    # cos.unsqueeze(unsqueeze_dim)：扩展维度→[8192, 1, 128]（匹配QV的shape）
+    q_embed = q * cos.unsqueeze(unsqueeze_dim) + rotate_half(q) * sin.unsqueeze(unsqueeze_dim)
+    k_embed = k * cos.unsqueeze(unsqueeze_dim) + rotate_half(k) * sin.unsqueeze(unsqueeze_dim) 
+
+    return q_embed, k_embed
+
+            
+
+
+
+    
     
 
     
