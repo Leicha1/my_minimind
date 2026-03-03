@@ -295,7 +295,24 @@ class Attention(nn.Module):
         
         return output, past_kv
 
+class FeedForward(nn.Moudle):
+    def __init__(self, args:MiniMindConfig):
+        super().__init__()
+        if args.intermediate_size is None:
+            intermediate_size = int(args.hidden_size * 8 / 3)
+            args.intermediate_size = 64 * ((intermediate_size + 64 - 1) // 64) #将计算出的中间层维度向上取整到 64 的整数倍
+        
+        self.up_proj   = nn.Linear(args.hidden_size, args.intermediate_size, bias=False)
+        self.gate_proj = nn.Linear(args.hidden_size, args.intermediate_size, bias=False)
+        self.down_proj = nn.Linear(args.intermediate_size, args.hidden_size, bias=False)
 
+        self.dropout = nn.Dropout(args.dropout)
+        self.act_fn = ACT2FN(args.hidden_act)
+
+    def forward(self,x):
+        return self.dropout(self.down_proj(self.up_proj(x) * self.act_fn(self.gate_proj(x))))
+
+        
 
         
 
