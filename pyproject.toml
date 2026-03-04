@@ -11,6 +11,7 @@ dependencies = [
     "torchvision==0.21.0",
     "torchaudio==2.6.0",
     "transformers>=4.57.1",
+    "datasets==3.6.0",
 ]
 [[tool.uv.index]]
 name = "pytorch-cu124"
