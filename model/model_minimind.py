@@ -294,7 +294,8 @@ class Attention(nn.Module):
                 extended_attention_mask = (1.0 - extended_attention_mask) * -1e9 # 掩码为0的位置置为-∞
                 scores += extended_attention_mask
             # 4. softmax归一化（转float防止精度问题，再转回原类型）
-            scores = F.softmax(scores.float(),dim=-1).typed_as(xq)
+            # scores = F.softmax(scores.float(),dim=-1).typed_as(xq)
+            scores = F.softmax(scores.float(), dim=-1).to(dtype=xq.dtype, device=xq.device)
             # 5. 注意力分数dropout
             scores = self.attn_dropout(scores)
             # 6. 注意力加权求和：分数 × V
