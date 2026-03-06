@@ -198,7 +198,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_interval", type=int, default=1000, help="模型保存间隔")
 
     # ========== 模型架构参数 ==========
-    parser.add_argument("--hidden_size", default=512, type=int, help="隐藏层维度")
+    parser.add_argument("--hidden_size", default=640, type=int, help="隐藏层维度")
     parser.add_argument("--num_hidden_layers", default=8, type=int, help="隐藏层数量")
     parser.add_argument(
         "--max_seq_len",
@@ -208,7 +208,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--use_moe",
-        default=0,
+        default=1,
         type=int,
         choices=[0, 1],
         help="是否使用MoE架构（0=否，1=是）",
@@ -218,7 +218,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_path",
         type=str,
-        default="../dataset/sft_mini_512.jsonl",
+        default="../dataset/sft_512.jsonl",
         help="训练数据路径",
     )
     parser.add_argument(
@@ -238,7 +238,7 @@ if __name__ == "__main__":
     # ========== 实验跟踪参数 ==========
     parser.add_argument("--use_wandb", action="store_true", help="是否使用wandb")
     parser.add_argument(
-        "--wandb_project", type=str, default="MokioMind-Full-SFT", help="wandb项目名"
+        "--wandb_project", type=str, default="MiniMind-Full-SFT", help="wandb项目名"
     )
     parser.add_argument(
         "--use_compile",
@@ -308,7 +308,7 @@ if __name__ == "__main__":
 
         wandb_id = ckp_data.get("wandb_id") if ckp_data else None
         resume = "must" if wandb_id else None  # 必须恢复到同一实验
-        wandb_run_name = f"MokioMind-Full-SFT-Epoch-{args.epochs}-BatchSize-{args.batch_size}-LearningRate-{args.learning_rate}"
+        wandb_run_name = f"MiniMind-Full-SFT-Epoch-{args.epochs}-BatchSize-{args.batch_size}-LearningRate-{args.learning_rate}"
         wandb.init(
             project=args.wandb_project, name=wandb_run_name, id=wandb_id, resume=resume
         )
