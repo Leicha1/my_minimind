@@ -35,11 +35,12 @@ def train_epoch(epoch, loader, iters, start_step=0, wandb=None):
 
     # 遍历DataLoader，enumerate的start参数设置起始步数（断点续训）
     # step：当前迭代步数（从start_step+1开始）；(input_ids, labels)：批量数据
-    for step, (input_ids, labels) in enumerate(loader, start=start_step+1):
+    for step, (input_ids, labels, attention_mask) in enumerate(loader, start=start_step+1):
         # ========== 步骤1：数据设备迁移 ==========
         # 将输入数据移到指定设备（GPU/CPU），args.device通常是"cuda"或"cpu"
         input_ids = input_ids.to(args.device)
         labels =labels.to(args.device)
+        attention_mask = attention_mask.to(args.device)  # ！修正：接收并转移 attention_mask
 
         # ========== 步骤2：动态调整学习率 ==========
         # 计算当前全局步数：epoch*总步数 + 当前step（用于学习率调度，余弦退火）
@@ -56,11 +57,10 @@ def train_epoch(epoch, loader, iters, start_step=0, wandb=None):
         # autocast_ctx：混合精度上下文（torch.cuda.amp），自动混合float16/float32，提升训练速度、节省显存\
         with autocast_ctx:
             # 模型前向传播：输入input_ids和labels，返回包含loss的结果对象
-            res = model(input_ids, labels=labels)
+            res = model(input_ids, labels=labels, attention_mask=attention_mask)  # ！修正：直接传入labels和attention_mask，由模型内部计算loss
             # 总损失 = 主损失（logits_loss） + MoE辅助损失（aux_loss）
             # 主损失：因果语言建模的交叉熵损失；aux_loss：MoE的负载平衡损失（普通模型为0）
-            loss = res.loss
-            # loss = res.loss + res.aux_loss
+            loss = res.loss + res.aux_loss
             # 梯度累积：将损失除以累积步数（避免累积后梯度放大）
             # 比如accumulation_steps=4，每4步更新一次参数，每步损失除以4
             loss = loss / args.accumulation_steps
@@ -286,7 +286,7 @@ if __name__ == "__main__":
 
     train_sampler = DistributedSampler(train_ds) if dist.is_initialized() else None
 
-    scaler = torch.cuda.amp.GradScaler(enabled=(args.dtype == "float16"))
+    scaler = torch.amp.GradScaler(enabled=(args.dtype == "float16"))
 
     optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
 
