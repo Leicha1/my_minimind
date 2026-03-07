@@ -5,7 +5,7 @@ import warnings
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, TextStreamer
 from model.model_minimind import MiniMindConfig, MiniMindForCausalLM
-# from model.model_lora import *
+from model.model_lora import apply_lora, load_lora
 from trainer.trainer_utils import setup_seed, get_model_params
 warnings.filterwarnings('ignore')
 
@@ -20,10 +20,12 @@ def init_model(args):
         ))
         moe_suffix = '_moe' if args.use_moe else ''
         ckp = f'./{args.save_dir}/{args.weight}_{args.hidden_size}{moe_suffix}.pth'
+        print(f"当前加载的权重是：{ckp}")
         model.load_state_dict(torch.load(ckp, map_location=args.device), strict=True)
-        # if args.lora_weight != 'None':
-        #     apply_lora(model)
-        #     load_lora(model, f'./{args.save_dir}/lora/{args.lora_weight}_{args.hidden_size}.pth')
+        if args.lora_weight != 'None':
+            apply_lora(model)
+            print(f"加载lora权重：./{args.save_dir}/lora/{args.lora_weight}_{args.hidden_size}.pth")
+            load_lora(model, f'./{args.save_dir}/lora/{args.lora_weight}_{args.hidden_size}.pth')
     else:
         model = AutoModelForCausalLM.from_pretrained(args.load_from, trust_remote_code=True)
     get_model_params(model, model.config)
